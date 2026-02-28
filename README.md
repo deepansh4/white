@@ -157,16 +157,3 @@ npm run build:client          # outputs to client/dist/
 
 ## Extending the App
 
-### Adding persistence (MongoDB example)
-1. Create `server/src/services/mongoWhiteboardService.js` implementing the same interface
-2. Replace the import in `socket/handlers/drawingHandler.js` and `roomHandler.js`
-
-### Adding authentication
-1. Add `jsonwebtoken` + middleware in `server/src/middleware/auth.js`
-2. Wrap socket connection in `io.use(authMiddleware)`
-3. Replace `socket.id` user identity with `socket.data.userId`
-
-### Adding undo/redo
-1. Track stroke IDs in the store
-2. Emit `draw:undo` event that pops the last stroke from the service
-3. Replay remaining strokes via `replayStrokes`
