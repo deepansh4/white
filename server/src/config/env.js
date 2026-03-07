@@ -20,14 +20,20 @@ export const config = Object.freeze({
   isDev:     (process.env.NODE_ENV || 'development') === 'development',
 
   // ── Collaborative history ──────────────────────────────────────────────────
-  // Maximum undoable actions per room. Oldest actions are dropped when exceeded.
   historyLimit: int('HISTORY_LIMIT', 100),
 
-  // ── HTTP rate limiting (REST endpoints only) ──────────────────────────────
-  // WebSocket drawing events are NOT rate-limited — see drawingHandler.js.
+  // ── HTTP rate limiting — global (all REST endpoints) ──────────────────────
   httpRateLimit: Object.freeze({
-    windowMs: int('HTTP_RATE_WINDOW_MS', 15 * 60 * 1000),  // 15 min window
-    max:      int('HTTP_RATE_MAX', 300),                     // requests per window per IP
+    windowMs: int('HTTP_RATE_WINDOW_MS', 15 * 60 * 1000),  // 15-min window
+    max:      int('HTTP_RATE_MAX', 300),
+  }),
+
+  // ── Room creation rate limiting — POST /api/rooms only ───────────────────
+  // Tighter than the global limit to prevent automated room farming.
+  // 20 rooms per hour per IP is generous for human use and blocks bots.
+  roomCreateRateLimit: Object.freeze({
+    windowMs: int('ROOM_CREATE_RATE_WINDOW_MS', 60 * 60 * 1000),  // 1-hour window
+    max:      int('ROOM_CREATE_RATE_MAX', 20),
   }),
 
   // ── Canvas bounds (must match client CANVAS_W / CANVAS_H constants) ───────

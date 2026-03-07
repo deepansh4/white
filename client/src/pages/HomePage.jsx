@@ -1,29 +1,74 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Pencil, ArrowRight, Hash } from 'lucide-react';
-import { generateRoomId } from '@/lib/utils';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Pencil, ArrowRight, Hash, Loader2 } from 'lucide-react';
+import { createRoom } from '@/lib/api';
+import { isValidRoomId } from '@/lib/utils';
 import { useWhiteboardStore } from '@/store/useWhiteboardStore';
 
+// Human-readable messages for error codes arriving via ?error= query param
+const ERROR_MESSAGES = {
+  'room-not-found': 'That room no longer exists or the link has expired.',
+  'invalid-room':   'Invalid room link. Please create or join a room below.',
+};
+
 export const HomePage = () => {
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setUsername, setRoomId } = useWhiteboardStore();
 
-  const [name, setName] = useState('');
-  const [room, setRoom] = useState('');
-  const [error, setError] = useState('');
+  const [name,      setName]      = useState('');
+  const [room,      setRoom]      = useState('');
+  const [error,     setError]     = useState('');
+  const [creating,  setCreating]  = useState(false);
 
-  const enter = (roomId) => {
-    if (!name.trim()) { setError('Please enter your name'); return; }
-    setUsername(name.trim());
+  // Show a contextual message if we were redirected here with an error code
+  useEffect(() => {
+    const code = searchParams.get('error');
+    if (code && ERROR_MESSAGES[code]) {
+      setError(ERROR_MESSAGES[code]);
+    }
+  }, []);
+
+  const enterRoom = (roomId) => {
     setRoomId(roomId);
     navigate(`/board/${roomId}`);
   };
 
-  const createRoom = () => enter(generateRoomId());
-  const joinRoom = (e) => {
+  // ── Create new room ──────────────────────────────────────────────────────────
+  // Calls POST /api/rooms — the server generates a UUID v4 and registers the room.
+  // The client cannot invent a room ID; it always receives one from the server.
+  const handleCreate = async () => {
+    if (!name.trim()) { setError('Please enter your name'); return; }
+    setError('');
+    setCreating(true);
+    try {
+      setUsername(name.trim());
+      const roomId = await createRoom();
+      enterRoom(roomId);
+    } catch (err) {
+      setError(err.message || 'Could not create room. Please try again.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // ── Join existing room ───────────────────────────────────────────────────────
+  // Validates the UUID format client-side before navigating.
+  // The server will perform a second check (existence) when the socket connects.
+  const handleJoin = (e) => {
     e.preventDefault();
-    if (!room.trim()) { setError('Enter a room code'); return; }
-    enter(room.trim().toUpperCase());
+    if (!name.trim())  { setError('Please enter your name'); return; }
+    if (!room.trim())  { setError('Enter a room code');       return; }
+
+    const trimmed = room.trim().toLowerCase();
+    if (!isValidRoomId(trimmed)) {
+      setError('Invalid room code — paste the full link or the code from the address bar.');
+      return;
+    }
+
+    setError('');
+    setUsername(name.trim());
+    enterRoom(trimmed);
   };
 
   return (
@@ -66,13 +111,17 @@ export const HomePage = () => {
             />
           </div>
 
-          {/* Create new */}
+          {/* Create new board */}
           <button
-            onClick={createRoom}
-            className="w-full flex items-center justify-between px-4 py-3 bg-ink text-chalk rounded-xl font-body font-medium text-sm hover:bg-ink-soft transition-colors group"
+            onClick={handleCreate}
+            disabled={creating}
+            className="w-full flex items-center justify-between px-4 py-3 bg-ink text-chalk rounded-xl font-body font-medium text-sm hover:bg-ink-soft transition-colors group disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span>Create new board</span>
-            <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            <span>{creating ? 'Creating…' : 'Create new board'}</span>
+            {creating
+              ? <Loader2 size={16} className="animate-spin" />
+              : <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            }
           </button>
 
           <div className="flex items-center gap-3">
@@ -81,16 +130,17 @@ export const HomePage = () => {
             <div className="flex-1 h-px bg-canvas-line" />
           </div>
 
-          {/* Join existing */}
-          <form onSubmit={joinRoom} className="flex gap-2">
+          {/* Join existing room — paste the UUID from the address bar */}
+          <form onSubmit={handleJoin} className="flex gap-2">
             <div className="flex-1 relative">
               <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={room}
-                onChange={(e) => { setRoom(e.target.value.toUpperCase()); setError(''); }}
-                placeholder="Room code"
-                maxLength={8}
+                onChange={(e) => { setRoom(e.target.value.toLowerCase()); setError(''); }}
+                placeholder="Paste room code"
+                // UUID v4 is 36 chars
+                maxLength={36}
                 className="w-full pl-8 pr-3 py-2.5 bg-canvas-bg border border-canvas-line rounded-xl text-sm font-mono text-ink placeholder:text-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ink/20 focus:border-ink/40 transition-all"
               />
             </div>
@@ -108,7 +158,7 @@ export const HomePage = () => {
         </div>
 
         <p className="text-center text-xs text-ink-muted font-body mt-5">
-          Share the room code with collaborators to draw together
+          Share the URL from your address bar with collaborators
         </p>
       </div>
     </div>

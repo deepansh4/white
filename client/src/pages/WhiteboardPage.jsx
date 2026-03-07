@@ -6,23 +6,45 @@ import { RoomHeader } from '@/components/whiteboard/RoomHeader';
 import { Toolbar } from '@/components/whiteboard/Toolbar';
 import { EraserSizeSlider } from '@/components/whiteboard/EraserSizeSlider';
 import Canvas from '@/components/whiteboard/Canvas';
+import { isValidRoomId } from '@/lib/utils';
 
 export const WhiteboardPage = () => {
   const { roomId } = useParams();
-  const navigate = useNavigate();
-  const { username, setRoomId } = useWhiteboardStore();
+  const navigate   = useNavigate();
+  const { username, setRoomId, roomError, clearRoomError } = useWhiteboardStore();
 
+  // Redirect to home if no username (page refreshed without going through HomePage)
   useEffect(() => { if (!username) navigate('/'); }, [username]);
+
+  // Validate the UUID format client-side before even connecting.
+  // If the URL contains a malformed ID, send the user home immediately
+  // with a clear error — no socket connection attempted.
+  useEffect(() => {
+    if (roomId && !isValidRoomId(roomId)) {
+      navigate('/?error=invalid-room', { replace: true });
+    }
+  }, [roomId]);
+
   useEffect(() => { if (roomId) setRoomId(roomId); }, [roomId]);
+
+  // ── Room error navigation ────────────────────────────────────────────────────
+  // useSocket sets roomError in the store when the server rejects the join.
+  // We navigate here (in the page) rather than in the hook so the hook stays
+  // presentation-free and testable without a router context.
+  useEffect(() => {
+    if (!roomError) return;
+    clearRoomError();
+    if (roomError === 'ROOM_NOT_FOUND') {
+      navigate('/?error=room-not-found', { replace: true });
+    }
+  }, [roomError]);
 
   const rendererRef = useRef(null);
   const canvasRef   = useRef(null);
 
   const { emit, emitUndo, emitRedo } = useSocket(rendererRef);
 
-  // ── Board actions ────────────────────────────────────────────────────────────
-  // draw:clear is an undoable server action; history:state broadcast updates buttons
-  const handleClear    = useCallback(() => emit('draw:clear'), [emit]);
+  const handleClear = useCallback(() => emit('draw:clear'), [emit]);
 
   const handleDownload = useCallback(() => {
     const canvas = canvasRef.current;
@@ -35,19 +57,18 @@ export const WhiteboardPage = () => {
     ctx.fillRect(0, 0, offscreen.width, offscreen.height);
     ctx.drawImage(canvas, 0, 0);
     const link         = document.createElement('a');
-    link.download      = `board-${roomId}-${Date.now()}.png`;
+    link.download      = `board-${Date.now()}.png`;
     link.href          = offscreen.toDataURL('image/png');
     link.click();
-  }, [roomId]);
+  }, []);
 
-  // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       if (e.shiftKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); emitRedo(); return; }
-      if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); emitUndo(); return; }
-      if (e.key === 'y' || e.key === 'Y') { e.preventDefault(); emitRedo(); }
+      if (e.key === 'z' || e.key === 'Z')                  { e.preventDefault(); emitUndo(); return; }
+      if (e.key === 'y' || e.key === 'Y')                  { e.preventDefault(); emitRedo(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

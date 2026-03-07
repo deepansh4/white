@@ -1,12 +1,5 @@
 import { create } from 'zustand';
 
-/**
- * Central Zustand store.
- *
- * History state (canUndo / canRedo) is now SHARED and server-authoritative.
- * The server broadcasts `history:state` to ALL room members after every
- * undo/redo/stroke/clear so every client's buttons stay perfectly in sync.
- */
 export const useWhiteboardStore = create((set) => ({
 
   // ── Tool config ─────────────────────────────────────────────────────────────
@@ -22,9 +15,7 @@ export const useWhiteboardStore = create((set) => ({
   setOpacity:    (opacity)    => set({ opacity }),
   setEraserSize: (eraserSize) => set({ eraserSize }),
 
-  // ── Shared collaborative history state ──────────────────────────────────────
-  // Updated exclusively via `history:state` socket event from the server.
-  // All connected users see the same values — no optimistic local state.
+  // ── Collaborative history — server-authoritative ────────────────────────────
   canUndo: false,
   canRedo: false,
   setHistoryState: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
@@ -41,6 +32,13 @@ export const useWhiteboardStore = create((set) => ({
   setSelfUser:         (selfUser)         => set({ selfUser }),
   setUsers:            (users)            => set({ users }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+
+  // ── Room error — set by useSocket on room:error events ─────────────────────
+  // WhiteboardPage watches this and navigates away when set.
+  // null = no error; string code = error (e.g. 'ROOM_NOT_FOUND')
+  roomError:     null,
+  setRoomError:  (code) => set({ roomError: code }),
+  clearRoomError: ()    => set({ roomError: null }),
 
   // ── Remote cursors ─────────────────────────────────────────────────────────
   cursors: {},
