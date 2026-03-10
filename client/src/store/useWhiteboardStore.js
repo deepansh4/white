@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export const useWhiteboardStore = create((set) => ({
 
-  // ── Tool config ─────────────────────────────────────────────────────────────
+  // ── Tool config ──────────────────────────────────────────────────────────────
   tool:       'pen',
   color:      '#1A1814',
   lineWidth:  3,
@@ -15,12 +15,12 @@ export const useWhiteboardStore = create((set) => ({
   setOpacity:    (opacity)    => set({ opacity }),
   setEraserSize: (eraserSize) => set({ eraserSize }),
 
-  // ── Collaborative history — server-authoritative ────────────────────────────
+  // ── Collaborative history ────────────────────────────────────────────────────
   canUndo: false,
   canRedo: false,
   setHistoryState: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),
 
-  // ── Room / presence ─────────────────────────────────────────────────────────
+  // ── Room / presence ──────────────────────────────────────────────────────────
   roomId:           null,
   username:         '',
   selfUser:         null,
@@ -33,14 +33,12 @@ export const useWhiteboardStore = create((set) => ({
   setUsers:            (users)            => set({ users }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
-  // ── Room error — set by useSocket on room:error events ─────────────────────
-  // WhiteboardPage watches this and navigates away when set.
-  // null = no error; string code = error (e.g. 'ROOM_NOT_FOUND')
-  roomError:     null,
-  setRoomError:  (code) => set({ roomError: code }),
-  clearRoomError: ()    => set({ roomError: null }),
+  // ── Room error ───────────────────────────────────────────────────────────────
+  roomError:      null,
+  setRoomError:   (code) => set({ roomError: code }),
+  clearRoomError: ()     => set({ roomError: null }),
 
-  // ── Remote cursors ─────────────────────────────────────────────────────────
+  // ── Remote cursors ───────────────────────────────────────────────────────────
   cursors: {},
 
   updateCursor: (userId, data) =>

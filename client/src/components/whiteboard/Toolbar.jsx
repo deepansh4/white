@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Pen, Eraser, Minus, Square, Circle, Trash2, Download,
-  Hand, ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useWhiteboardStore } from '@/store/useWhiteboardStore';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,6 @@ const HIDE_DELAY_IDLE  = 4_500;   // ms
 const HIDE_DELAY_LEAVE = 3_000;   // ms
 
 const TOOLS = [
-  { id: 'pan',    icon: Hand,   label: 'Pan (H)'         },
   { id: 'pen',    icon: Pen,    label: 'Pen (P)'         },
   { id: 'eraser', icon: Eraser, label: 'Eraser (E)'      },
   { id: 'line',   icon: Minus,  label: 'Line (L)'        },

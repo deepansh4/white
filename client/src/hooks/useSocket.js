@@ -7,19 +7,15 @@ import {
   sanitizeCursor,
   sanitizeUsers,
   sanitizeHistoryState,
+  sanitizeViewport,
 } from '@/lib/sanitize';
 
-/**
- * Manages all Socket.io events and bridges them to the Zustand store / canvas.
- *
- * Security: every inbound payload is sanitized before touching the store or canvas.
- *
- * Room error handling:
- *   The server emits room:error with a structured { code, message } payload.
- *   ROOM_NOT_FOUND → store.setRoomError('ROOM_NOT_FOUND')
- *   WhiteboardPage watches roomError and navigates to / with an error query param.
- */
-export const useSocket = (canvasRendererRef) => {
+// applyViewportRef — created in WhiteboardPage, passed here.
+// When viewport:change arrives, we call applyViewportRef.current(vp) directly.
+// Canvas sets applyViewportRef.current = commit on every render so it is always
+// the latest function. This is a direct synchronous call — no React state,
+// no batching, no useEffect delay. The DOM updates immediately.
+export const useSocket = (canvasRendererRef, applyViewportRef) => {
   const {
     roomId, username,
     setConnectionStatus, setSelfUser, setUsers,
@@ -29,7 +25,7 @@ export const useSocket = (canvasRendererRef) => {
 
   const socketRef = useRef(null);
 
-  // ── One-time connection ────────────────────────────────────────────────────
+  // ── One-time connection ──────────────────────────────────────────────────────
   useEffect(() => {
     const socket = connectSocket();
     socketRef.current = socket;
@@ -45,7 +41,7 @@ export const useSocket = (canvasRendererRef) => {
     };
   }, []);
 
-  // ── Room join ──────────────────────────────────────────────────────────────
+  // ── Room join ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!roomId) return;
     const socket = getSocket();
@@ -54,18 +50,15 @@ export const useSocket = (canvasRendererRef) => {
 
     socket.on('room:synced', (raw) => {
       if (!raw || typeof raw !== 'object') return;
-
       const strokes = sanitizeStrokeArray(raw.strokes);
       const users   = sanitizeUsers(raw.users);
       const history = sanitizeHistoryState(raw.history);
-
       const self = raw.self && typeof raw.self === 'object' ? {
         id:       String(raw.self.id       || '').slice(0, 64),
         username: String(raw.self.username || 'Guest').replace(/[<>"'&]/g, '').slice(0, 32),
         color:    typeof raw.self.color === 'string' ? raw.self.color : '#888',
         joinedAt: typeof raw.self.joinedAt === 'string' ? raw.self.joinedAt : '',
       } : null;
-
       setSelfUser(self);
       setUsers(users);
       setHistoryState(history);
@@ -86,48 +79,44 @@ export const useSocket = (canvasRendererRef) => {
     socket.on('room:error', (raw) => {
       if (!raw || typeof raw !== 'object') return;
       const code = typeof raw.code === 'string' ? raw.code : 'UNKNOWN';
-
       if (code === 'ROOM_NOT_FOUND') {
-        // Room does not exist (never created, or expired after everyone left).
-        // Signal WhiteboardPage to navigate home with an explanatory error param.
         setRoomError('ROOM_NOT_FOUND');
-      } else {
-        // Other errors (INVALID_PAYLOAD etc.) — log in dev, ignore in prod
-        if (import.meta.env.DEV && typeof raw.message === 'string') {
-          console.warn('[room:error]', code, raw.message.slice(0, 200));
-        }
+      } else if (import.meta.env.DEV && typeof raw.message === 'string') {
+        console.warn('[room:error]', code, raw.message.slice(0, 200));
       }
     });
 
     socket.on('draw:start', (raw) => {
-      if (!raw || typeof raw !== 'object') return;
-      canvasRendererRef.current?.remoteDrawStart(raw);
+      if (raw && typeof raw === 'object') canvasRendererRef.current?.remoteDrawStart(raw);
     });
-
     socket.on('draw:move', (raw) => {
-      if (!raw || typeof raw !== 'object') return;
-      canvasRendererRef.current?.remoteDrawMove(raw);
+      if (raw && typeof raw === 'object') canvasRendererRef.current?.remoteDrawMove(raw);
     });
-
     socket.on('draw:end', (raw) => {
       const stroke = sanitizeStroke(raw);
       if (stroke) canvasRendererRef.current?.remoteDrawEnd(stroke);
     });
-
     socket.on('draw:clear', () => canvasRendererRef.current?.clear());
-
     socket.on('board:replay', (raw) => {
-      const strokes = sanitizeStrokeArray(raw?.strokes);
-      canvasRendererRef.current?.replayStrokes(strokes);
+      canvasRendererRef.current?.replayStrokes(sanitizeStrokeArray(raw?.strokes));
     });
-
     socket.on('history:state', (raw) => {
       setHistoryState(sanitizeHistoryState(raw));
     });
-
     socket.on('cursor:move', (raw) => {
       const cursor = sanitizeCursor(raw);
       if (cursor) updateCursor(cursor.userId, cursor);
+    });
+
+    // ── INCOMING viewport sync ───────────────────────────────────────────────
+    // Direct synchronous call — no React state involved.
+    // applyViewportRef.current is set by Canvas on every render to its commit()
+    // function. Calling it here immediately applies the transform to the DOM.
+    socket.on('viewport:change', (raw) => {
+      const vp = sanitizeViewport(raw);
+      if (vp && applyViewportRef?.current) {
+        applyViewportRef.current(vp);
+      }
     });
 
     return () => {
@@ -135,7 +124,7 @@ export const useSocket = (canvasRendererRef) => {
       [
         'room:synced', 'room:user_joined', 'room:user_left', 'room:error',
         'draw:start', 'draw:move', 'draw:end', 'draw:clear',
-        'board:replay', 'history:state', 'cursor:move',
+        'board:replay', 'history:state', 'cursor:move', 'viewport:change',
       ].forEach((e) => socket.off(e));
     };
   }, [roomId]);

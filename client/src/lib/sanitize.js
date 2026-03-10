@@ -143,3 +143,22 @@ export const sanitizeHistoryState = (raw) => {
     canRedo: raw.canRedo === true,
   };
 };
+
+/**
+ * Sanitize a viewport:change payload { x, y, zoom }.
+ * Called on INCOMING viewport sync events from other users.
+ * Clamps zoom to a generous but safe range so a malicious client
+ * can't freeze the UI by setting zoom to 0 or Infinity.
+ */
+export const sanitizeViewport = (raw) => {
+  if (!raw || typeof raw !== 'object') return null;
+  const x    = typeof raw.x    === 'number' && Number.isFinite(raw.x)    ? raw.x    : null;
+  const y    = typeof raw.y    === 'number' && Number.isFinite(raw.y)    ? raw.y    : null;
+  const zoom = typeof raw.zoom === 'number' && Number.isFinite(raw.zoom) ? raw.zoom : null;
+  if (x === null || y === null || zoom === null) return null;
+  return {
+    x:    Math.max(-100_000, Math.min(100_000, x)),
+    y:    Math.max(-100_000, Math.min(100_000, y)),
+    zoom: Math.max(0.01,     Math.min(50,      zoom)),
+  };
+};

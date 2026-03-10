@@ -36,7 +36,19 @@ export const WhiteboardPage = () => {
   const rendererRef = useRef(null);
   const canvasRef   = useRef(null);
 
-  const { emit, emitUndo, emitRedo } = useSocket(rendererRef);
+  // applyViewportRef is the bridge for incoming viewport:change events.
+  //
+  // Socket path (no React state involved):
+  //   viewport:change received → useSocket calls applyViewportRef.current(vp)
+  //                            → Canvas.commit({ x, y, zoom })
+  //                            → DOM updated immediately (imperative, 60fps)
+  //
+  // Canvas sets applyViewportRef.current = commit on every render so it is
+  // always the latest function. useSocket closes over the ref object itself
+  // (stable), and reads .current at call time (always fresh).
+  const applyViewportRef = useRef(null);
+
+  const { emit, emitUndo, emitRedo } = useSocket(rendererRef, applyViewportRef);
 
   // ── Actions ───────────────────────────────────────────────────────────────────
   const handleClear    = useCallback(() => emit('draw:clear'), [emit]);
@@ -60,28 +72,20 @@ export const WhiteboardPage = () => {
   // ── Keyboard shortcuts ────────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
-      // Never steal keys from inputs
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-
       const mod = e.ctrlKey || e.metaKey;
-
-      // ── Mod shortcuts: undo / redo ────────────────────────────────────────
       if (mod) {
         if (e.shiftKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); emitRedo(); return; }
         if (e.key === 'z' || e.key === 'Z')                  { e.preventDefault(); emitUndo(); return; }
         if (e.key === 'y' || e.key === 'Y')                  { e.preventDefault(); emitRedo(); return; }
-        return; // ignore other mod-key combos
+        return;
       }
-
-      // ── Plain key shortcuts: tool selection ───────────────────────────────
       switch (e.key.toLowerCase()) {
-        case 'h': setTool('pan');    break;
         case 'p': setTool('pen');    break;
         case 'e': setTool('eraser'); break;
         case 'l': setTool('line');   break;
         case 'r': setTool('rect');   break;
         case 'c': setTool('circle'); break;
-        // 'f' (fit to view) is handled directly inside Canvas via the button
         default: break;
       }
     };
@@ -89,24 +93,19 @@ export const WhiteboardPage = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [emitUndo, emitRedo, setTool]);
 
-  // ────────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden bg-canvas-bg">
-
       <RoomHeader roomId={roomId} onUndo={emitUndo} onRedo={emitRedo} />
-
-      {/* Main drawing area */}
       <div className="flex flex-1 overflow-hidden relative">
-
-        {/* Eraser size slider — floats at top-centre of the canvas area */}
         <EraserSizeSlider />
-
-        {/* Toolbar — self-contained left drawer, consistent on all screen sizes */}
         <Toolbar onClear={handleClear} onDownload={handleDownload} />
-
-        {/* Canvas — fills the remaining space, handles its own pan/zoom */}
         <div className="flex-1 relative">
-          <Canvas ref={canvasRef} rendererRef={rendererRef} emit={emit} />
+          <Canvas
+            ref={canvasRef}
+            rendererRef={rendererRef}
+            emit={emit}
+            applyViewportRef={applyViewportRef}
+          />
         </div>
       </div>
     </div>
