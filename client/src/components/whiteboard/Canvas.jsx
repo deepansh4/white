@@ -96,10 +96,19 @@ const Canvas = forwardRef(({ rendererRef, emit, applyViewportRef }, ref) => {
     return () => ro.disconnect();
   }, []);
 
-  const canvasEl = mainCanvasRef.current;
-  const zoom     = canvasEl ? canvasEl.getBoundingClientRect().width / CANVAS_W : 1;
-  const ringD    = eraserSize * zoom;
-  const gridPx   = 48 * zoom;
+  // scaleX/scaleY: canvas-px → CSS-px conversion for each axis independently.
+  // The display container is almost never exactly 16:9, so
+  //   rect.width/CANVAS_W  ≠  rect.height/CANVAS_H
+  // A single "zoom" applied to both axes makes the remote cursor Y drift up to
+  // ~34 px from the stroke by the bottom of the screen on a 1440×900 window.
+  // getPos() uses separate scaleX/scaleY when emitting coords, so we must
+  // invert with the same per-axis scales here.
+  const canvasEl   = mainCanvasRef.current;
+  const canvasRect = canvasEl ? canvasEl.getBoundingClientRect() : null;
+  const scaleX = canvasRect ? canvasRect.width  / CANVAS_W : 1;
+  const scaleY = canvasRect ? canvasRect.height / CANVAS_H : 1;
+  const ringD  = eraserSize * scaleX;
+  const gridPx = 48 * scaleX;
 
   const userMap = Object.fromEntries((users || []).map(u => [u.id, u]));
   const cursor  = tool === 'pen' ? PEN_CURSOR : tool === 'eraser' ? 'none' : 'crosshair';
@@ -124,7 +133,7 @@ const Canvas = forwardRef(({ rendererRef, emit, applyViewportRef }, ref) => {
             'linear-gradient(rgba(200,196,188,0.4) 1px, transparent 1px)',
             'linear-gradient(90deg, rgba(200,196,188,0.4) 1px, transparent 1px)',
           ].join(','),
-          backgroundSize: `${gridPx}px ${gridPx}px`,
+          backgroundSize: `${gridPx}px ${48 * scaleY}px`,
         }}
       />
 
@@ -152,7 +161,9 @@ const Canvas = forwardRef(({ rendererRef, emit, applyViewportRef }, ref) => {
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
 
-      {/* Remote cursors */}
+      {/* Remote cursors — tip of the arrow SVG is at (0,0) of the viewBox so that
+           positioning the div at (cur.x * zoom, cur.y * zoom) places the visual tip
+           exactly where the stroke lands on canvas. */}
       {Object.entries(cursors || {}).map(([uid, cur]) => {
         const u = userMap[uid];
         if (!u) return null;
@@ -161,18 +172,19 @@ const Canvas = forwardRef(({ rendererRef, emit, applyViewportRef }, ref) => {
             key={uid}
             className="absolute pointer-events-none"
             style={{
-              left:       cur.x * zoom,
-              top:        cur.y * zoom,
+              left:       cur.x * scaleX,
+              top:        cur.y * scaleY,
               transition: 'left 60ms linear, top 60ms linear',
             }}
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M3 2L17 10L10 12L7 18L3 2Z"
-                fill={u.color} stroke="#fff" strokeWidth="1.5" />
+              <path d="M0 0L14 8L7 10L4 16Z"
+                fill={u.color} stroke="#fff" strokeWidth="1.5"
+                strokeLinejoin="round" />
             </svg>
             <span
-              className="absolute top-5 left-2 px-1.5 py-0.5 rounded text-white whitespace-nowrap"
-              style={{ fontSize: 11, background: u.color }}
+              className="absolute px-1.5 py-0.5 rounded text-white whitespace-nowrap"
+              style={{ fontSize: 11, background: u.color, top: 18, left: 8 }}
             >
               {u.username}
             </span>
@@ -188,7 +200,7 @@ const Canvas = forwardRef(({ rendererRef, emit, applyViewportRef }, ref) => {
             width:      ringD,
             height:     ringD,
             left:       ring.x - ringD / 2,
-            top:        ring.y - ringD / 2,
+            top:        ring.y - (eraserSize * scaleY) / 2,
             opacity:    ring.visible ? 1 : 0,
             background: 'rgba(255,255,255,0.15)',
             transition: 'opacity 80ms',
